@@ -1,0 +1,90 @@
+---
+title: "Dangerous Weather Events Across America"
+output: html_document
+author: "Grayson Udstrand"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+```{r readData, cache=TRUE}
+if (!file.exists("StormData.csv.bz2")) {
+    download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",
+                   destfile = "StormData.csv.bz2")
+}
+StormData <- read.csv("StormData.csv.bz2", header = TRUE)
+str(StormData)
+head(StormData)
+```
+
+We need to filter this data into the columns we think we will need and then clean those columns.
+
+```{r cleanData, cache=TRUE}
+library(dplyr)
+library(lubridate)
+
+StormDataLess <- select(StormData, BGN_DATE,EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+
+StormDataLess <- mutate(StormDataLess, BGN_DATE = as.Date(BGN_DATE, format = "%m/%d/%Y"))
+
+# Filter out the data which does not log all event types
+StormDataLess <- filter(StormDataLess, year(BGN_DATE) >= 1996)
+
+StormDataLessEXP <- mutate(StormDataLess,
+        PROPDMG = ifelse(PROPDMGEXP == "H" | PROPDMGEXP == "h", PROPDMG * 100,
+                  ifelse(PROPDMGEXP == "K" | PROPDMGEXP == "k", PROPDMG * 1000,
+                  ifelse(PROPDMGEXP == "M" | PROPDMGEXP == "m", PROPDMG * 1000000,
+                  ifelse(PROPDMGEXP == "B" | PROPDMGEXP == "b", PROPDMG * 1000000000,
+                  ifelse(PROPDMGEXP == "+", PROPDMG, 
+                  ifelse(PROPDMGEXP == "?" | PROPDMGEXP == "-", 0,
+                  ifelse(PROPDMGEXP == "0" | 
+                         PROPDMGEXP == "1" |
+                         PROPDMGEXP == "2" | 
+                         PROPDMGEXP == "3" | 
+                         PROPDMGEXP == "4" | 
+                         PROPDMGEXP == "5" | 
+                         PROPDMGEXP == "6" | 
+                         PROPDMGEXP == "7" | 
+                         PROPDMGEXP == "8", PROPDMG * 10, PROPDMG))))))))
+
+StormDataLessEXP <- mutate(StormDataLessEXP,
+        CROPDMG = ifelse(CROPDMGEXP == "H" | CROPDMGEXP == "h", CROPDMG * 100,
+                  ifelse(CROPDMGEXP == "K" | CROPDMGEXP == "k", CROPDMG * 1000,
+                  ifelse(CROPDMGEXP == "M" | CROPDMGEXP == "m", CROPDMG * 1000000,
+                  ifelse(CROPDMGEXP == "B" | CROPDMGEXP == "b", CROPDMG * 1000000000,
+                  ifelse(CROPDMGEXP == "+", CROPDMG, 
+                  ifelse(CROPDMGEXP == "?" | CROPDMGEXP == "-", 0,
+                  ifelse(CROPDMGEXP == "0" | 
+                         CROPDMGEXP == "1" |
+                         CROPDMGEXP == "2" | 
+                         CROPDMGEXP == "3" | 
+                         CROPDMGEXP == "4" | 
+                         CROPDMGEXP == "5" | 
+                         CROPDMGEXP == "6" | 
+                         CROPDMGEXP == "7" | 
+                         CROPDMGEXP == "8", CROPDMG * 10, CROPDMG))))))))
+
+# Drop unnecessary columns
+StormDataClean <- select(StormDataLessEXP, -one_of(c("PROPDMGEXP", "CROPDMGEXP")))
+
+str(StormDataClean)
+head(StormDataClean)
+```
+
+Now take a look at the most mayhem inducing events:
+
+```{r humancost, cache=TRUE}
+library(dplyr)
+
+# Get records in which there was a cost to human life or injuries
+StormDataHumanLife <- filter(StormDataLess, FATALITIES>0 | INJURIES>0)
+
+# Find the most violent event types
+EventDamage <- aggregate(data = StormDataHumanLife, FATALITIES + INJURIES ~ EVTYPE, sum) 
+
+names(EventDamage) <- c("EventType", "HumanCost")
+
+head(arrange(EventDamage, desc(HumanCost)))
+```
