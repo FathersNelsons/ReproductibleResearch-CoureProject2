@@ -84,7 +84,21 @@ StormDataHumanLife <- filter(StormDataLess, FATALITIES>0 | INJURIES>0)
 # Find the most violent event types
 EventDamage <- aggregate(data = StormDataHumanLife, FATALITIES + INJURIES ~ EVTYPE, sum) 
 
+# Set column names to something a little more friendly.
 names(EventDamage) <- c("EventType", "HumanCost")
 
-head(arrange(EventDamage, desc(HumanCost)))
+# Check over the numbers to see where to draw the line
+summary(EventDamage$HumanCost)
+
+# Let's consider the topmost quartile to be the most dangerous events
+EventDamage <- filter(EventDamage, HumanCost >= 105.8)
+```
+
+```{r fincost, cache = TRUE}
+library(dplyr)
+
+# Mutate table to contain an additional column to contain total financial responsibility of the event type
+StormCost <- mutate(StormDataLess, TotalCost = PROPDMG + CROPDMG)
+StormCost <- aggregate(data = StormCost, TotalCost ~ EVTYPE, sum)
+
 ```

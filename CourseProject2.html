@@ -275,16 +275,15 @@ StormDataHumanLife &lt;- filter(StormDataLess, FATALITIES&gt;0 | INJURIES&gt;0)
 # Find the most violent event types
 EventDamage &lt;- aggregate(data = StormDataHumanLife, FATALITIES + INJURIES ~ EVTYPE, sum) 
 
+# Set column names to something a little more friendly.
 names(EventDamage) &lt;- c(&quot;EventType&quot;, &quot;HumanCost&quot;)
 
-head(arrange(EventDamage, desc(HumanCost)))</code></pre>
-<pre><code>##        EventType HumanCost
-## 1        TORNADO     22178
-## 2 EXCESSIVE HEAT      8188
-## 3          FLOOD      7172
-## 4      LIGHTNING      4792
-## 5      TSTM WIND      3870
-## 6    FLASH FLOOD      2561</code></pre>
+# Check over the numbers to see where to draw the line
+summary(EventDamage$HumanCost)</code></pre>
+<pre><code>##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+##     1.0     2.0     6.0   483.4   105.8 22180.0</code></pre>
+<pre class="r"><code># Let's consider the topmost quartile to be the most dangerous events
+EventDamage &lt;- filter(EventDamage, HumanCost &gt;= 105.8)</code></pre>
 
 
 
