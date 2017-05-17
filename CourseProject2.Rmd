@@ -1,5 +1,5 @@
 ---
-title: "Dangerous Weather Events Across America"
+title: "The Most Dangerous and Costly Weather Events in the United States"
 output: html_document
 author: "Grayson Udstrand"
 ---
@@ -7,31 +7,73 @@ author: "Grayson Udstrand"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
+# Synopsis
+This study was intended to use NOAA weather event data to find out which types 
+of weather events are the most costly in terms of (1) human safety in America and
+(2) monetary data. The data was programmatically pulled, cleaned, processed, and
+analyzed using R to find evidence supporting potential answers to the above 
+directive. The final results show that there are clear and potent leaers in
+both of these aforementioned categories: heat waves and hurricanes/typhoons, 
+respectively. There is, however, cause to think that there may be more work
+to be done in the future due to some distrubing results with the final output of
+the analysis. 
 
-
+# Data Processing
+## Loading
 ```{r readData, cache=TRUE}
+# If compressed data file does not exist, download it
 if (!file.exists("StormData.csv.bz2")) {
     download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",
                    destfile = "StormData.csv.bz2")
 }
 StormData <- read.csv("StormData.csv.bz2", header = TRUE)
+
+# Take a look at the headers and data types to see what we need
 str(StormData)
-head(StormData)
 ```
 
-We need to filter this data into the columns we think we will need and then clean those columns.
+## Preprocessing
+For this analysis we will be only analyzing data from January 1996 on forward 
+since this is the most complete data according to NOAA. Since we are targeting
+information on the most dangerous and costly weather events, we want all 
+information available on both human and financial costs of the different weather
+types.  
+
+All of this in mind, we know we will need date information to filter the data
+by date range plus all information available for injuries, fatalities, property,
+and crop damage. Additionally, to calculate the actual number for these property
+and crop damages, we take in the respective multiplier columns which are used 
+to calculate the costs. 
 
 ```{r cleanData, cache=TRUE}
+# Load useful libraries
 library(dplyr)
 library(lubridate)
 
-StormDataLess <- select(StormData, BGN_DATE,EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+StormDataLess <- select(StormData, 
+                        BGN_DATE,
+                        EVTYPE, 
+                        FATALITIES, 
+                        INJURIES, 
+                        PROPDMG, 
+                        PROPDMGEXP, 
+                        CROPDMG, 
+                        CROPDMGEXP)
 
+# Convert the date column from factor to a date
 StormDataLess <- mutate(StormDataLess, BGN_DATE = as.Date(BGN_DATE, format = "%m/%d/%Y"))
 
 # Filter out the data which does not log all event types
 StormDataLess <- filter(StormDataLess, year(BGN_DATE) >= 1996)
+```
 
+In order to calculate the correct cost in the PROPDMG and CROPDMG columns, we
+implement the findings of 
+[this publication](https://rstudio-pubs-static.s3.amazonaws.com/58957_37b6723ee52b455990e149edde45e5b6.html). The converison scales are not immediately obvious, so it is wise 
+to look over this Rpub to understand why the next chunk is correct.
+
+```{r preProcess, cache = TRUE}
+# Implement the conversion mechanism
 StormDataLessEXP <- mutate(StormDataLess,
         PROPDMG = ifelse(PROPDMGEXP == "H" | PROPDMGEXP == "h", PROPDMG * 100,
                   ifelse(PROPDMGEXP == "K" | PROPDMGEXP == "k", PROPDMG * 1000,
@@ -68,37 +110,114 @@ StormDataLessEXP <- mutate(StormDataLessEXP,
 
 # Drop unnecessary columns
 StormDataClean <- select(StormDataLessEXP, -one_of(c("PROPDMGEXP", "CROPDMGEXP")))
-
-str(StormDataClean)
-head(StormDataClean)
 ```
 
-Now take a look at the most mayhem inducing events:
+At this point we can calculate the total damages in both human life and property
+and crop damage. We add these columns to the clean dataset create as columns so
+that we may work with them. The transformation for the actual monetary cost 
+columns should make sense, but the human cost column sum might be a little more 
+questionable. The line of thinking was that fatalities are obviously more costly
+than injuries. However, there is no way to effectively quantify the factor by 
+which a fatality is worse than injury, especially given the vague nature of the 
+definition of "injury" (these may range from paper-cuts to total paralysis for 
+all we know). Therefore, we keep it simple by just adding together the number of
+fatalities and injuries by row to get total human cost of the event. 
 
-```{r humancost, cache=TRUE}
+```{r precostprocess, cache=TRUE}
 library(dplyr)
 
-# Get records in which there was a cost to human life or injuries
-StormDataHumanLife <- filter(StormDataLess, FATALITIES>0 | INJURIES>0)
+# Add the cost columns and filter out those events where the cost is 0
+StormDataClean <- mutate(StormDataClean, HumanCost = FATALITIES + INJURIES)
+StormDataClean <- mutate(StormDataClean, DamageCost = PROPDMG + CROPDMG)
+```
 
+## Analysis
+
+At this point we are ready to begin our analysis on event types. We do this by
+creating two aggregate tables that find the mean cost per event for each event.
+This metric is valuable as it lends us the ability to figure out which events as
+a class are most costly. The original thought was to use the sum of the costs to
+present the costliest event type, but this poses potentially two problems:
+
+1. This metric is more dependent on all events in question being recorded
+properly and
+2. it puts more weight on events that occur far more often but may be less costly
+on a per-event basis
+
+```{r costanalysis, cache=TRUE}
 # Find the most violent event types
-EventDamage <- aggregate(data = StormDataHumanLife, FATALITIES + INJURIES ~ EVTYPE, sum) 
+EventHumanCost <- aggregate(data = StormDataClean, HumanCost ~ EVTYPE, mean)
+EventPropertyCost <- aggregate(data = StormDataClean, DamageCost ~ EVTYPE, mean)
 
-# Set column names to something a little more friendly.
-names(EventDamage) <- c("EventType", "HumanCost")
+# Filter out the events with no cost
+EventHumanCost <- filter(EventHumanCost, HumanCost > 0)
+EventPropertyCost <- filter(EventPropertyCost, DamageCost > 0)
 
 # Check over the numbers to see where to draw the line
-summary(EventDamage$HumanCost)
+summary(EventHumanCost$HumanCost)
+summary(EventPropertyCost$DamageCost)
 
-# Let's consider the topmost quartile to be the most dangerous events
-EventDamage <- filter(EventDamage, HumanCost >= 105.8)
+par(mfrow = c(2,1))
+hist(EventHumanCost$HumanCost)
+hist(EventPropertyCost$DamageCost)
+
+EventHumanCost <- arrange(EventHumanCost, desc(HumanCost))
+EventPropertyCost <- arrange(EventPropertyCost, desc(DamageCost))
+
+head(EventHumanCost)
+head(EventPropertyCost)
 ```
 
-```{r fincost, cache = TRUE}
-library(dplyr)
+From what we see in the above histogram, there is a huge dichotomy between the 
+lowest cost events and the highest cost. That is, the distributions are not 
+normal but are instead incredibly tail-heavy. Since we are looking for the most
+expensive event types, we will pull the top 5 from each of these sets.
 
-# Mutate table to contain an additional column to contain total financial responsibility of the event type
-StormCost <- mutate(StormDataLess, TotalCost = PROPDMG + CROPDMG)
-StormCost <- aggregate(data = StormCost, TotalCost ~ EVTYPE, sum)
+```{r quantileanalysis, cache=TRUE}
 
+# Find the 99th percentile and filter on it
+library(ggplot2)
+
+EventHumanCost <- top_n(EventHumanCost, 5)
+EventPropertyCost <- top_n(EventPropertyCost, 5)
+
+summary(EventHumanCost$HumanCost)
+summary(EventPropertyCost$DamageCost)
+
+par(mfrow = c(2,1))
+p1 <- ggplot(EventHumanCost, aes(x = EVTYPE, y = HumanCost, colour = EVTYPE)) 
+p1 <- p1 + geom_bar(stat = "identity") 
+p1 <- p1 + theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+p1 <- p1 + ggtitle("Top 5 Event Types for Human Cost")
+p1 <- p1 + xlab("Event Type") + ylab("HumanCost (Injuries + Fatalities)")
+print(p1)
+
+p2 <- ggplot(EventPropertyCost, aes(x=EVTYPE, y = DamageCost, colour = EVTYPE)) 
+p2 <- p2 + geom_bar(stat = "identity") 
+p2 <- p2 + theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+p2 <- p2 + ggtitle("Top 5 Event Types for Monetary Cost")
+p2 <- p2 + xlab("Event Type") + ylab("Property and Crop Damage ($)")
+print(p2)
 ```
+
+# Results
+The above analysis yields intersting results in figuring out which event types 
+cost the American public more in terms of human life and cost of destruction of
+property and crops. 
+
+## Human Cost
+Based on our simple metric for calculating human cost, we can see that heat 
+waves are the deadliest of American weather events on average by a factor of 
+over 3. While our decision to only look at the top 5 for each class of damage 
+may be short-sighted and cause us to miss some patterns, we can at least see this
+clearly. This event type is followed by hurricane/typhoon, and then cold and
+snow. 
+
+## Property Cost
+This class of cost showed similarly an event type which resoundingly held the 
+top position with an average of just over $817.2m in lost property and crops per
+hurricane/typhoon. Following next is the storm surge event type which on average
+cost 4.79 times less than hurricanes/typhoons. Interestingly enough, the following
+two event types are hurricane and then typhoon. This means there may have been a
+potential data cleansing step missed, and calls for an additional study to 
+explore this. 
